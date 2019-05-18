@@ -6,27 +6,27 @@ import moment from 'moment';
 import * as path from 'path';
 
 const pdfTableAreas = [
-    '31.0,30.0,159.375,787.62',
-    '165.0,30.0,293.375,787.62',
-    '300.0,30.0,427.322,787.62',
-    '435.0,30.0,563.375,787.62',
-    '94.0,30.0,221.322,787.62 ',
-    '229.0,30.0,357.375,787.62',
-    '363.005,30.0,491.38,490.885'
+    ['31.0,30.0,159.375,787.62', 1],
+    ['165.0,30.0,293.375,787.62', 1],
+    ['300.0,30.0,427.322,787.62', 1],
+    ['435.0,30.0,563.375,787.62', 1],
+    ['94.0,30.0,221.322,787.62 ', 2],
+    ['229.0,30.0,357.375,787.62', 2],
+    ['363.005,30.0,491.38,490.885', 2]
 ];
 
-const roles = {
-    8: ['0800', '1600'],
-    N: ['2200', '0800'],
-    SW: ['0800', '2230'],
-    S: ['0800', '2230'],
+const roleTypes = {
+    8: {hours :['0800', '1600'], title: 'Normal shift'},
+    N: {hours :['2200', '0800'], title: 'Night shift'},
+    SW: {hours :['0800', '2230'], title: 'Weekend long'},
+    S: {hours :['0800', '2230'], title: 'Long day'},
 }
 
 const momentDateString = 'DD-MMM-YY HHmm';
 
-async function getCsv(area: string): Promise<string[]> {
+async function getCsv(area: any[]): Promise<string[]> {
     return new Promise((res, rej) => {
-        const table = new Tabula('/home/scott/projects/timesheet/roster.pdf', { area: area });
+        const table = new Tabula('/home/scott/projects/timesheet/roster.pdf', { area: area[0], 'pages': area[1] });
         table.extractCsv((err, data) => {
             if (err) {
                 rej(err);
@@ -52,6 +52,7 @@ async function parseCsv(csv: string) {
 
 setTimeout(async () => {
     const output: Dict<PersonData> = {};
+    const parsedAreas = [];
     for (const area of pdfTableAreas) {
         const lineStrings = await getCsv(area);
         let sanitisedLines = lineStrings.map(l => {
@@ -63,6 +64,10 @@ setTimeout(async () => {
         sanitisedLines[0] = sanitisedLines[0].replace('Date', 'Name'); // tidy up header
         const csv = sanitisedLines.join('\n');
         const parsed = await parseCsv(csv) as [];
+        parsedAreas.push(parsed);
+    }
+
+    for(const parsed of parsedAreas) {
         for (const person of parsed) {
             let name;
             for (const [key, val] of Object.entries(person)) {
@@ -77,10 +82,11 @@ setTimeout(async () => {
                     }
                     output[name].events.push({date: key, type: val as string});
                     const date = `${key}-19`;
-                    const hours = roles[val as string];
-                    if (!hours) {
+                    const type = roleTypes[val as string];
+                    if (!type) {
                         continue;
                     }
+                    const hours = type.hours;
                     let addedDays = 0;
                     if (hours[0] > hours[1]) {
                         addedDays = 1;
@@ -90,7 +96,7 @@ setTimeout(async () => {
                     output[name].cal.createEvent({
                         start,
                         end,
-                        summary: `Work shift (${val})`
+                        summary: type.title,
                     })
                 }
             }
@@ -99,9 +105,8 @@ setTimeout(async () => {
     for (const [name, data] of Object.entries(output)) {
         data.cal.saveSync(`/home/scott/projects/timesheet/output/${name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`);
     }
-    debugger
     console.log('done');
-}, 1000);
+}, 0);
 
 interface Dict<T>{
     [key: string]: T;
